@@ -1,0 +1,147 @@
++—————————————————————————————+
+|	 	CS 140		     |
+| PROJECT 2: USER PROGRAMS    |
+| 	   DESIGN DOCUMENT       |
++————————-————————————————————+
+
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+Xiaoxin Wu < xwu36@buffalo.edu >
+Hironobu Nakasuji < hironobu@buffalo.edu >
+Shih-Chia Chen < shihchia@buffalo.edu >
+
+---- PRELIMINARIES ----
+
+None.
+
+
+ARGUMENT PASSING
+================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or ‘struct' member, global or static variable, `typedef', or enumeration. Identify the purpose of each in 25 words or less.
+
+>> None.
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do you arrange for the elements of argv[ ] to be in the right order? How do you avoid overflowing the stack page?
+
+>> Basically, we pushed the split substrings into the user-stack contiguously one by one in right-to-left order. Then we filled the padding with ‘\0’ and moved the pointer to the closest memory address which is a modulo 4. Next we moved the pointer one row down and push a null pointer sentinel on the stack. After that, we pushed argv and argc to the stack. Finally we pushed a fake “return address”.
+
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r( ) but not strtok( )?
+
+>> Because strtok_r() is a variant of strtok that is thread-safe.
+
+>> A4: In Pintos, the kernel separates commands into a executable name and arguments.  In Unix-like systems, the shell does this separation.  Identify at least two advantages of the Unix approach.
+
+>> Reduce the running time inside kernel and robust checking.
+
+
+SYSTEM CALLS
+============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or ‘struct' member, global or static variable, `typedef', or enumeration.  Identify the purpose of each in 25 words or less.
+
+>> typedef int pid_t
+
+// changed struct members for thread struct
+struct thread
+{
+    int exit_status;
+
+    struct list child_list; 	//the list to store the child processes
+    struct thread* parent;	//its parent thread
+
+    int wait_which_child_process;		//the child process it is waiting for
+
+    /*--------------------------------------------------------*/
+    bool wait_already;	//the blocked status of the thread
+    bool killed_notby_kernel;	//check whether the thread is killed by kernel or syscal
+    /*————————————————————————————————————————————————————————*/
+};
+
+
+//a map struct to associate the files with their file descriptors
+struct file_fd_map {
+    struct file* file_;
+    int fd;		//file descriptors
+    struct list_elem elem;
+};
+
+
+//for child process
+struct child {
+    int tid;
+    struct list_elem elem;
+    int exit_status;
+    /*--------------------------------------------------------*/
+    bool hold_lock_or_not;		//if the child is holding a lock or not
+    bool alive;		//if the child process is alive or not
+    /*--------------------------------------------------------*/
+}
+
+>> B2: Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
+
+>> We use a mapping struct to associate the file descriptors with the corresponding files. File descriptors should be created within a single process because they are process related and each process exits, it needs to release all of its files.
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the kernel.
+>> We have a semaphore to control the access for reading and writing. For reading part, if the fd is equal to STDIN_FILENO, which means it is a standard input. So we use input_getc() to read the string from console into buffer. On the other hand, if it doesn’t equal to STDIN_FILENO, we use file_read to read the size bytes from the file open as fd into buffer.
+
+For writing part, if the fd is equal to STDOUT_FILENO, which means it is a standard output. So we use putbuf() to write the string into console from buffer. On the other hand if it doesn’t equal to STDOUT_FILENO, we use file_write to write the size bytes into the file open as fd from buffer.
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least and the greatest possible number of inspections of the page table (e.g. calls to pagedir_get_page()) that might result?  What about for a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
+
+>> B5: Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
+
+>> First of all, when the child process id is given (when the process is newly created), the current thread searches through its child processes to get matched one. the wait function assigns the id to the current thread to wait for.
+If the child process is still alive, we semadown the semaphore to block the current thread from running. Instead, it lets the child run. 
+After the child exits, it checks the child is in the child process list of its parent. If it is, it grants its error status to its parent, semas up the semaphore and exits. So its parent would be able to run.  
+
+>> B6: Any access to user program memory at a user-specified address can fail due to a bad pointer value.  Such accesses must cause the process to be terminated.  System calls are fraught with such accesses, e.g. a "write" system call requires reading the system call number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can fail at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary   function of code in a morass of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, buffers, etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for  managing these issues.  Give an example.
+
+>> Everytime, we verify the validity of a user-provided pointer, then dereference it by is_user_vaddr() and pagedir_get_page(). If an error is detect, we force the current thread to exit and release all the resources it’s holding such as fd and files.
+Let’s say when a write system call is requiring reading the system call, we’re able to detect that should not be a valid address by the above strategy. So in this case, the current thread would exit and free all its resources and no deadlock would occur.
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable fails, so it cannot return before the new executable has completed loading.  How does your code ensure this?  How is the load success/failure status passed back to the thread that calls “exec”?
+
+>> The child process possesses its parent id. The parent has a property called load_status whose initial value is true. If the child fails to load, it would change its this status of its parent to false.
+
+>> B8: Consider parent process P with child process C.  How do you ensure proper synchronization and avoid race conditions when P calls wait(C) before C exits?  After C exits?  How do you ensure that all resources are freed in each case?  How about when P terminates without waiting, before C exits?  After C exits?  Are there any special cases?
+
+>> We have a semaphore to control the access for both P and C. In the wait function, the parent has to wait the exit of C. After C exits, it would sema up the semaphore and unblock its parent. if P calls wait(C) wait after C exits, P has a property called wait_already. This property can never have a chance to be changed by child in this case, so P has to exit. when a process exits, it has to free all resources it has. If P terminates without waiting, basically we don’t need to do anything because P would free all the resources when it terminates.When C tries to set it’s status and find out parent has exited, it will ignore it and continue to execute. No. no special cases.
+
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the kernel in the way that you did?
+
+>> The reason why we chose this implementation is that this is the simple way. This first approach verifying the validity of user-provided pointer, it just needs to check the pointer is under the physical pointer or not. This is the simple way.
+
+>> B10: What advantages or disadvantages can you see to your design for file descriptors?
+
+>> Pros:
+We map the file descriptors to the corresponding files. Each thread has its own fd and file list. So when it exits, it is very easy to free all the files it’s holding since we can get these files from the file list and get the specific file by fd of the file.
+
+Cons:
+Streams mechanism overwhelms the usage of file descriptor as for the performance. This means that using file descriptor just offers simple functions for transferring blocks and characters.
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping. If you changed it, what advantages are there to your approach?
+
+>> If we change it, we can differentiate between the process and thread, which enables us to have one to many relationship not one to one.
+
+
+			

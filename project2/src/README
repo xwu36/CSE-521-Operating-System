@@ -1,0 +1,34 @@
+
+/* Pintos Project 2
+ *
+ * created on Dec 7, 2016
+ *
+ * Authors:
+ * TEAM: XTH
+ * TEAM MEMBERS: Shih-Chia Chen, Hironobu Nakasuji, Xiaoxin Wu
+ * UbIT: shihchia, hironobu, xwu36
+ *
+ * COURSE INFO:
+ * CSE521_Introduction to Operating Systems
+ * Instructor: Tevfik Koşar
+ *
+ * Project Details:
+ * 1. Argument Passing
+ * 2. System Calls
+ * 3. Denying Writes to Executables
+ *
+ * Result:
+ * 73 task passed out of 76.
+ * The grade is 88.1%
+ *
+ * Reference: Pintos Manual
+ * Reference: courses.cs.vt.edu/~cs3204/spring2007/pintos/Project2SessionSpring2007.ppt
+ * Reference: https://web.stanford.edu/class/cs140/projects/pintos/pintos_3.html
+ * Reference: wenku.baidu.com/view/e1a837f1f90f76c661371a7a.html
+ * Reference: www.ccs.neu.edu/home/cbw/static/class/5600/slides/Project1.pptx
+ *
+ * */
+
+
+
+

@@ -1,0 +1,174 @@
+CSE 521
+Project Design Document
+—— GROUP ——
+Xiaoxin Wu < xwu36@buffalo.edu >
+Hironobu Nakasuji < hironobu@buffalo.edu >
+Shih-Chia Chen < shihchia@buffalo.edu >
+—— PRELIMINARIES ——
+None
+—— TASK1 ——
+ALARM_CLOCK
+===========
+——DATA STURCTURE——
+>> A1: Copy here the declaraZon of each new or changed `struct' or `struct' member, global or
+staZc variable, `typedef', or enumeraZon. IdenZfy the purpose of each in 25 words or less.
+/* struct */
+staZc struct list blocked_list; /* processes in THREAD_WAITING state (blocked). */
+struct thread *thread_top; /*get the top element of the blocked_list, so system don’t need
+to check all the threads’ Zcks*/
+/* enumeraZon */
+enum intr_level old_level = intr_disable (); /*block the threads */
+/* variables */
+int64_t unblocked_Zcks; /* the Zcks when the blocked threads should be unblocked */
+——ALGORITHMS ——
+>> A2: Briefly describe what happens in a call to Zmer_sleep(), including the effects of the Zmer
+interrupt handler.
+A: We design a blocked_list to store the blocked(sleep) threads. When Zmer_sleep() is called, it's
+the Zme for us to block the thread and wake it up Zcks o'clock later. So we have a variable called
+'unblocked_Zcks', which is the Zcks when we should unblock the blocked threads. we also need a
+blocked_list, which is ordered based on the ‘unblocked_Zcks' value. The smaller value a thread
+has, the earlier Zme we'll wake it up. To implement this, we use the list_insert_order() funcZon
+and add a unblocked_Zcks_less() to compare the value of the 'unblocked_Zcks'. Because the Zmer
+will call Zmer_interrupt() every Zck, we can make use of this funcZon and add a wake_up_thread()
+funcZon in it. Specifically, the wake_up_thread() will check if the top element of the list should be
+waked up or not. If it's the Zme to wake it up, we unblock it and remove it from the list.
+>> A3: What steps are taken to minimize the amount of Zme spent in the Zmer interrupt handler?
+A: Only need to check the top thread of the list.
+—— SYNCHRONIZATION ——
+>> A4: How are race condiZons avoided when mulZple threads call Zmer_sleep() simultaneously?
+A: Using the semaphore to avoid the race condiZons.
+>> A5: How are race condiZons avoided when a Zmer interrupt occurs during a call to
+Zmer_sleep()?
+A: Using another semaphore, mutex.
+—— RATIONALE ——
+>> A6: Why did you choose this design? In what ways is it superior to another design you
+considered?
+A: This design, put the blocked threads into the list, allows the system to get the top element of
+the list.
+Advantage is that the system does not need to check all the threads’ Zcks and can directly take the
+top element of the list.
+On the other hand, disadvantage is that we have to create another list to store and manage the
+list.
+PRIORITY SCHEDULING
+===================
+——DATA STURCTURE——
+>> B1: Copy here the declaraZon of each new or changed `struct' or `struct' member, global or
+staZc variable, `typedef', or enumeraZon. IdenZfy the purpose of each in 25 words or less.
+/* struct */
+struct lock *wait_which_lock; /* a lock the thread is trying to acquire */
+struct list lock_list; /* the locks the thread has */
+/* variable */
+int original_priority; /* the original priority of thread */
+int priority; /* current thread’s priority */
+>> B2: Explain the data structure used to track priority donaZon. Use ASCII art to diagram a nested
+donaZon. (Alternately, submit a .png file.)
+A:
+Thread Lock Priority
+——— —— —————
+main -————> a 31 -> 32 -> 33
+|
+medium ——— -—> b 32 -> 33
+|
+high ——————- 33
+medium’s donaZon list: high
+main’s donaZon list :high, medium
+medium trying to acquire: a
+high trying to acquire: b
+So we can trace main from high like this: high -> b -> medium -> a -> main
+——ALGORITHMS ——
+>> B3: How do you ensure that the highest priority thread waiZng for a lock, semaphore, or
+condiZon variable wakes up first?
+A: Before unblocking the highest priority thread, we sort the list sema->waiters to make sure the
+list is sorted.
+>> B4: Describe the sequence of events when a call to lock_acquire() causes a priority donaZon.
+How is nested donaZon handled?
+A: In lock_acquire() funcZon, we first check if the lock has a holder or not. if the lock already has a
+holder and the holder’s priority is smaller than the current thread's priority, so the thread has to
+wait unZl the holder releases the lock.
+In this case, we will let thread_current()->wait_which_lock to be the lock, and lock->priority to be
+thread_current()->priority.
+Next check if the lock's holder has the lock in its bloc_list or not. If it does have, we add it into the
+list(the holder doesn't necessarily have the lock in its list), otherwise update the priority of the lock
+in the list, resort the lock list, and give the highest priority to the lock holder.
+Next use recursion and update all the hock holders in the chain of donors. When a thread is
+unblocked, it has to restore the lock's priority back to current_thread's priority and we also need to
+change the thread's waiZng lock to NULL in the lock_acquire().
+>> B5: Describe the sequence of events when lock_release() is called on a lock that a higherpriority
+thread is waiZng for.
+A: In lock_release() funcZon, we remove the lock in the lock holder's list, and aqer that, if the
+holder's list is empty, we restore the priority value of the lock to its original priority value.
+otherwise, sort the list, let the priority of the top one of the list to be lock_ref's priority.
+Replace the list_push_back with list_insert_ordered in sema_down().
+In thread_set_priority(), if the new priority is larger than current priority, then change the priority,
+otherwise keep the current priority, aqer it releases all the locks, its priority goes to the new
+priority.
+In sema_up(), sort the list before unblocking the thread from the list to make sure the one with the
+highest priority gets unblocked.
+Add thread_yield() funcZon, once a thread is unblocked, we have to reschedule based on the
+priority.
+—— SYNCHRONIZATION ——
+>> B6: Describe a potenZal race in thread_set_priority() and explain how your implementaZon
+avoids it. Can you use a lock to avoid this race?
+A: When the donor changes the priority of the lock holder and at the same Zme the thread itself
+wants to change its priority, there will be a conflict.
+No, because we didn't design it.
+—— RATIONALE ——
+>> B7: Why did you choose this design? In what ways is it superior to another design you
+considered?
+A: Because we think this is the best design and we don't have other alternaZve ways to solve the
+problem.
+ADVANCED SCHEDULER
+====================
+——DATA STURCTURE——
+>> C1: Copy here the declaraZon of each new or changed `struct' or `struct' member, global or
+staZc variable, `typedef', or enumeraZon. IdenZfy the purpose of each in 25 words or less.
+/* struct */
+int nice; /* nice value */
+fixed_point_number recent_cpu; /* recent _cpu value */
+fixed_point_number load_avg; /* load_avg value
+/* typedef */
+typedef int fixed_point_number; /* fixed the point type */
+——ALGORITHMS ——
+>> C2: Suppose threads A, B, and C have nice values 0, 1, and 2. Each has a recent_cpu value of 0.
+Fill in the table below showing the scheduling decision and the priority and recent_cpu values for
+each thread aqer each given number of Zmer Zcks:
+Zmer recent_cpu priority thread
+Zcks A B C A B C to run
+—— — — — — — — ———
+0 0 0 0 63 61 59 A
+4 4 0 0 62 61 59 A
+8 8 0 0 61 61 59 B
+12 8 4 0 61 60 59 A
+16 12 4 0 60 60 59 B
+20 12 8 0 60 59 59 A
+24 16 8 0 59 59 59 C
+28 16 8 4 59 59 58 B
+32 16 12 4 59 58 58 A
+36 20 12 4 58 58 58 C
+>> C3: Did any ambiguiZes in the scheduler specificaZon make values in the table uncertain?
+>>If so, what rule did you use to resolve them?
+>>Does this match the behavior of your scheduler?
+A: Yes, there will be some ambiguiZes such as if two or three threads have equal priority, which
+thread should run first.
+Using Round Robin to solve the problems.
+Yes, it does.
+>> C4: How is the way you divided the cost of scheduling between code inside and outside
+interrupt context likely to affect performance?
+A: Only the funcZon, thread_set_nice, is outside interrupt context because it will change the
+priority value.
+—— RATIONALE ——
+>> C5: Briefly criZque your design, poinZng out advantages and disadvantages in your design
+choices.
+>>If you were to have extra Zme to work on this part of the project, how might you choose to
+refine or improve your design?
+A: Advantage is that we did the minimal modificaZon.
+Disadvantage is that we have to turn off the interrupZon.
+If we have Zme, we will use semaphore instead of turning off the interrupZon.
+>> C6: The assignment explains arithmeZc for fixed-point math in detail, but it leaves it open to
+you to implement it.
+>>Why did you decide to implement it the way you did?
+>>If you created an abstracZon layer for fixed-point math, that is, an abstract data type and/or a
+set of funcZons or macros to manipulate fixed-point numbers, why did you do so?
+>>If not, why not?
+A: We just create a new header file and use generic type to implement fixed point math.
+Using the generic type is more convenient since there is no compaZble issue.
